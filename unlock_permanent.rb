@@ -60,13 +60,13 @@ begin
   puts "💾 Atualizando configurações no banco de dados..."
 
   plan = InstallationConfig.find_or_initialize_by(name: 'INSTALLATION_PRICING_PLAN')
-  plan.value = 'enterprise'
+  plan.serialized_value = 'enterprise'
   plan.locked = true
   plan.save!
   puts "✅ Plano enterprise configurado e bloqueado"
 
   quantity = InstallationConfig.find_or_initialize_by(name: 'INSTALLATION_PRICING_PLAN_QUANTITY')
-  quantity.value = 9_999_999
+  quantity.serialized_value = 9_999_999
   quantity.locked = true
   quantity.save!
   puts "✅ Quantidade de usuários configurada e bloqueada (9.999.999)"
