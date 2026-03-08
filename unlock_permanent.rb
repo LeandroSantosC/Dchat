@@ -60,13 +60,13 @@ begin
   puts "💾 Atualizando configurações no banco de dados..."
 
   plan = InstallationConfig.find_or_initialize_by(name: 'INSTALLATION_PRICING_PLAN')
-  plan.serialized_value = { value: 'enterprise' }.with_indifferent_access
+  plan.serialized_value = ActiveSupport::HashWithIndifferentAccess.new(value: 'enterprise')
   plan.locked = true
   plan.save!
   puts "✅ Plano enterprise configurado e bloqueado"
 
   quantity = InstallationConfig.find_or_initialize_by(name: 'INSTALLATION_PRICING_PLAN_QUANTITY')
-  quantity.serialized_value = { value: 9_999_999 }.with_indifferent_access
+  quantity.serialized_value = ActiveSupport::HashWithIndifferentAccess.new(value: 9_999_999)
   quantity.locked = true
   quantity.save!
   puts "✅ Quantidade de usuários configurada e bloqueada (9.999.999)"
