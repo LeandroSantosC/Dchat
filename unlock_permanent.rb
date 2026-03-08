@@ -15,12 +15,12 @@ CREATE OR REPLACE FUNCTION force_enterprise_installation_configs()
 RETURNS TRIGGER AS $$
 BEGIN
     IF NEW.name = 'INSTALLATION_PRICING_PLAN' THEN
-        NEW.serialized_value = to_jsonb('--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess\\nvalue: enterprise\\n');
+        NEW.serialized_value = jsonb_build_object('value', '--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess\\nvalue: enterprise\\n');
         NEW.locked = true;
     END IF;
 
     IF NEW.name = 'INSTALLATION_PRICING_PLAN_QUANTITY' THEN
-        NEW.serialized_value = to_jsonb('--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess\\nvalue: 9999999\\n');
+        NEW.serialized_value = jsonb_build_object('value', '--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess\\nvalue: 9999999\\n');
         NEW.locked = true;
     END IF;
 
