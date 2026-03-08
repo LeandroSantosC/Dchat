@@ -1,26 +1,55 @@
 #!/usr/bin/env ruby
-
-# 🚀 Dchat - Script PERMANENTE para desbloquear o Chatwoot Enterprise
-# Execute com: wget -qO- https://raw.githubusercontent.com/LuizBranco-ClickHype/Dchat/main/unlock_permanent.rb | bundle exec rails runner -
+# Dchat Captain Unlock - Complete Edition for Chatwoot v4.8+
+# Based on https://github.com/CHypeTools/Dchat with Captain feature flags
+# Educational purposes only
 
 require 'fileutils'
+require 'yaml'
 
-puts "🚀 === Dchat - Desbloqueio PERMANENTE do Chatwoot Enterprise ==="
+# ============================================================================
+# CONFIGURATION: Choose which Captain version to enable
+# ============================================================================
+# Set to false if you plan to use custom endpoints (OpenRouter, etc.)
+# Captain V2 has compatibility issues with custom endpoints due to RubyLLM configuration
+#
+# V1 Only (ENABLE_V2 = false):  Stable, works with any endpoint (3 menus)
+# V1 + V2 (ENABLE_V2 = true):   Experimental, may require manual config (7 menus)
+ENABLE_V2 = true  # Change to true if you want V2 features (not recommended for custom endpoints)
+# ============================================================================
+
+puts "🚀 === Dchat Captain - Complete Unlock for v4.8+ ==="
 puts ""
 
-# SQL para criar trigger permanente
+# 1. Create PostgreSQL trigger (permanent protection)
 sql_trigger = <<-SQL
--- Função que força valores enterprise
 CREATE OR REPLACE FUNCTION force_enterprise_installation_configs()
 RETURNS TRIGGER AS $$
 BEGIN
     IF NEW.name = 'INSTALLATION_PRICING_PLAN' THEN
-        NEW.serialized_value = jsonb_build_object('value', '--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess\\nvalue: enterprise\\n');
+        NEW.serialized_value = to_jsonb($yaml$--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess
+value: enterprise
+$yaml$::text);
         NEW.locked = true;
     END IF;
 
     IF NEW.name = 'INSTALLATION_PRICING_PLAN_QUANTITY' THEN
-        NEW.serialized_value = jsonb_build_object('value', '--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess\\nvalue: 9999999\\n');
+        NEW.serialized_value = to_jsonb($yaml$--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess
+value: 9999999
+$yaml$::text);
+        NEW.locked = true;
+    END IF;
+
+    IF NEW.name = 'IS_ENTERPRISE' THEN
+        NEW.serialized_value = to_jsonb($yaml$--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess
+value: true
+$yaml$::text);
+        NEW.locked = true;
+    END IF;
+
+    IF NEW.name = 'INSTALLATION_TYPE' THEN
+        NEW.serialized_value = to_jsonb($yaml$--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess
+value: enterprise
+$yaml$::text);
         NEW.locked = true;
     END IF;
 
@@ -28,10 +57,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Remove trigger anterior se existir
 DROP TRIGGER IF EXISTS trg_force_enterprise_configs ON installation_configs;
 
--- Cria trigger
 CREATE TRIGGER trg_force_enterprise_configs
 BEFORE INSERT OR UPDATE ON installation_configs
 FOR EACH ROW
@@ -39,55 +66,97 @@ EXECUTE FUNCTION force_enterprise_installation_configs();
 SQL
 
 begin
-  puts "📊 Aplicando trigger permanente no PostgreSQL..."
-
-  # Executa o SQL diretamente
+  puts "📊 Creating permanent PostgreSQL trigger..."
   ActiveRecord::Base.connection.execute(sql_trigger)
-
-  puts "✅ Trigger criado com sucesso!"
-  puts "   • Função: force_enterprise_installation_configs()"
-  puts "   • Trigger: trg_force_enterprise_configs"
+  puts "✅ Trigger created successfully!"
   puts ""
-
 rescue => e
-  puts "❌ Erro ao criar trigger: #{e.message}"
-  puts "   Tentando método alternativo..."
+  puts "⚠️  Trigger creation failed: #{e.message}"
+  puts "   Continuing with database updates..."
   puts ""
 end
 
-# Atualiza registros atuais
+# 2. Update database configurations
 begin
-  puts "💾 Atualizando configurações no banco de dados..."
+  puts "💾 Updating installation configurations..."
 
-  plan = InstallationConfig.find_or_initialize_by(name: 'INSTALLATION_PRICING_PLAN')
-  plan.serialized_value = ActiveSupport::HashWithIndifferentAccess.new(value: 'enterprise')
-  plan.locked = true
-  plan.save!
-  puts "✅ Plano enterprise configurado e bloqueado"
+  upsert_sql = <<-SQL
+    INSERT INTO installation_configs (name, serialized_value, locked, created_at, updated_at)
+    VALUES 
+      ('INSTALLATION_PRICING_PLAN', to_jsonb($$--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess
+value: enterprise
+$$::text), true, NOW(), NOW()),
+      ('INSTALLATION_PRICING_PLAN_QUANTITY', to_jsonb($$--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess
+value: 9999999
+$$::text), true, NOW(), NOW()),
+      ('IS_ENTERPRISE', to_jsonb($$--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess
+value: true
+$$::text), true, NOW(), NOW()),
+      ('INSTALLATION_TYPE', to_jsonb($$--- !ruby/hash:ActiveSupport::HashWithIndifferentAccess
+value: enterprise
+$$::text), true, NOW(), NOW())
+    ON CONFLICT (name) DO UPDATE 
+      SET serialized_value = EXCLUDED.serialized_value,
+          locked = EXCLUDED.locked,
+          updated_at = NOW();
+  SQL
 
-  quantity = InstallationConfig.find_or_initialize_by(name: 'INSTALLATION_PRICING_PLAN_QUANTITY')
-  quantity.serialized_value = ActiveSupport::HashWithIndifferentAccess.new(value: 9_999_999)
-  quantity.locked = true
-  quantity.save!
-  puts "✅ Quantidade de usuários configurada e bloqueada (9.999.999)"
+  ActiveRecord::Base.connection.execute(upsert_sql)
+
+  puts "✅ INSTALLATION_PRICING_PLAN: enterprise"
+  puts "✅ INSTALLATION_PRICING_PLAN_QUANTITY: 9999999"
+  puts "✅ IS_ENTERPRISE: true"
+  puts "✅ INSTALLATION_TYPE: enterprise"
   puts ""
 
 rescue => e
-  puts "❌ Erro nas configurações do banco: #{e.message}"
+  puts "❌ Database configuration error: #{e.message}"
   puts ""
 end
 
-# Limpa cache Redis
+# 3. Enable Captain features for all accounts (NEW - required for v4.8+)
+begin
+  if ENABLE_V2
+    puts "🔓 Enabling Captain V1 and V2 features..."
+    puts "⚠️  WARNING: V2 may have compatibility issues with custom endpoints"
+  else
+    puts "🔓 Enabling Captain V1 features only (stable)..."
+    puts "ℹ️  V2 disabled for better compatibility with custom endpoints"
+  end
+  puts ""
+
+  account_count = 0
+  Account.find_each do |account|
+    if ENABLE_V2
+      account.enable_features!('captain_integration', 'captain_integration_v2')
+      puts "  ✅ Account ##{account.id}: #{account.name} (V1 + V2)"
+    else
+      account.enable_features!('captain_integration')
+      puts "  ✅ Account ##{account.id}: #{account.name} (V1 only)"
+    end
+    account_count += 1
+  end
+
+  puts ""
+  puts "✅ Captain enabled for #{account_count} account(s)"
+  puts ""
+
+rescue => e
+  puts "❌ Feature enablement error: #{e.message}"
+  puts ""
+end
+
+# 4. Clear Redis cache
 begin
   if defined?(Redis::Alfred)
     Redis::Alfred.delete(Redis::Alfred::CHATWOOT_INSTALLATION_CONFIG_RESET_WARNING)
-    puts '✅ Flag de alerta premium removida do Redis'
+    puts '✅ Redis cache cleared'
   end
 rescue => e
-  puts "⚠️  Erro ao limpar Redis: #{e.message}"
+  puts "⚠️  Redis error: #{e.message}"
 end
 
-# Atualiza fallback em lib/chatwoot_hub.rb
+# 5. Patch chatwoot_hub.rb fallback values
 begin
   possible_paths = [
     '/app/lib/chatwoot_hub.rb',
@@ -99,18 +168,19 @@ begin
   hub_file = possible_paths.find { |path| File.exist?(path) }
 
   if hub_file
-    puts "📁 Arquivo encontrado: #{hub_file}"
+    puts ""
+    puts "📁 Patching fallback values in #{hub_file}..."
 
-    # Backup
+    # Create backup
     backup_file = "#{hub_file}.backup.#{Time.now.strftime('%Y%m%d_%H%M%S')}"
     FileUtils.cp(hub_file, backup_file)
     puts "💾 Backup: #{backup_file}"
 
-    # Ler e atualizar conteúdo
+    # Read and update content
     content = File.read(hub_file)
     original = content.dup
 
-    # Atualiza fallbacks
+    # Update fallbacks
     content.gsub!(
       /(InstallationConfig\.find_by\(name:\s*['"]INSTALLATION_PRICING_PLAN['"]\)&?\.value\s*\|\|\s*)['"]community['"]/,
       "\\1'enterprise'"
@@ -121,53 +191,72 @@ begin
       "\\19999999"
     )
 
+    content.gsub!(
+      /(InstallationConfig\.find_by\(name:\s*['"]INSTALLATION_TYPE['"]\)&?\.value\s*\|\|\s*)['"][^'"]+['"]/,
+      "\\1'enterprise'"
+    )
+
     if content != original
       File.write(hub_file, content)
-      puts "✅ Fallbacks atualizados em #{hub_file}"
+      puts "✅ Fallback values updated"
     else
-      puts "ℹ️  Arquivo já estava atualizado"
+      puts "ℹ️  File already patched"
     end
-    puts ""
   end
 
 rescue => e
-  puts "⚠️  Erro ao atualizar arquivo: #{e.message}"
-  puts ""
+  puts "⚠️  File patch error: #{e.message}"
 end
 
-# Verifica configurações finais
-begin
-  puts "🔍 Verificando configurações aplicadas:"
+# 6. Verification
+puts ""
+puts "🔍 Verification:"
 
-  configs = InstallationConfig.where(name: ['INSTALLATION_PRICING_PLAN', 'INSTALLATION_PRICING_PLAN_QUANTITY'])
+configs = InstallationConfig.where(name: ['INSTALLATION_PRICING_PLAN', 'INSTALLATION_PRICING_PLAN_QUANTITY', 'IS_ENTERPRISE'])
+configs.each do |config|
+  puts "   • #{config.name}: #{config.value} (locked: #{config.locked})"
+end
 
-  configs.each do |config|
-    puts "   • #{config.name}: #{config.value} (locked: #{config.locked || false})"
-  end
+it = InstallationConfig.find_by(name: 'INSTALLATION_TYPE')
+if it
+  puts "   • INSTALLATION_TYPE: #{it.value} (locked: #{it.locked})"
+end
 
-  # Verifica se o trigger existe
-  trigger_check = ActiveRecord::Base.connection.execute(
-    "SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_force_enterprise_configs') as exists"
-  ).first
+trigger_check = ActiveRecord::Base.connection.execute(
+  "SELECT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_force_enterprise_configs') as exists"
+).first
 
-  if trigger_check && trigger_check['exists']
-    puts "   • Trigger PostgreSQL: ✅ ATIVO"
-  else
-    puts "   • Trigger PostgreSQL: ⚠️  Não detectado"
-  end
+if trigger_check && trigger_check['exists']
+  puts "   • PostgreSQL Trigger: ✅ ACTIVE"
+else
+  puts "   • PostgreSQL Trigger: ⚠️  Not detected"
+end
 
-rescue => e
-  puts "⚠️  Erro ao verificar: #{e.message}"
+Account.find_each do |account|
+  v1 = account.feature_captain_integration? ? '✅' : '❌'
+  v2 = account.feature_captain_integration_v2? ? '✅' : '❌'
+  puts "   • Account ##{account.id} Captain V1: #{v1} | V2: #{v2}"
 end
 
 puts ""
-puts "🎉 === Desbloqueio PERMANENTE concluído ==="
+puts "🎉 === Unlock Complete ==="
 puts ""
-puts "🔒 PROTEÇÃO ATIVA:"
-puts "   • Trigger PostgreSQL monitora e força valores enterprise"
-puts "   • Qualquer tentativa de alterar será revertida automaticamente"
-puts "   • Configurações marcadas como 'locked'"
+puts "📋 Applied:"
+puts "  • Enterprise configurations with permanent trigger protection"
+if ENABLE_V2
+  puts "  • Captain V1 (FAQs, Documents, Playground, Inboxes, Settings)"
+  puts "  • Captain V2 (Scenarios, Tools, Guardrails, Guidelines)"
+  puts "  ⚠️  V2 enabled - may have issues with custom endpoints"
+else
+  puts "  • Captain V1 only (FAQs, Documents, Playground, Inboxes, Settings)"
+  puts "  ✅ V2 disabled for better compatibility with custom endpoints"
+end
+puts "  • Fallback value patches"
 puts ""
-puts "🔄 Reinicie o container para aplicar todas as mudanças"
-puts "🌟 Dchat - Educational Project"
+puts "💡 Configuration:"
+puts "   ENABLE_V2 = #{ENABLE_V2}"
+puts "   To change: Edit line 17 in unlock_captain_v4.8.rb and re-run"
+puts ""
+puts "🔄 Restart your Chatwoot container to apply all changes"
+puts "🌟 Dchat - Educational Project - v4.8+ Edition"
 puts ""
